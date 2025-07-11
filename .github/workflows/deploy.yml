@@ -2,7 +2,7 @@ name: Wallet v3 Demo Unity
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
