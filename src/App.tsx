@@ -38,7 +38,7 @@ function App() {
     walletWindow = window.open(
         `${authInput?.url}?dappOrigin=${window.location.origin}&sessionId=${sessionId}`,
         "Wallet",
-        'width=600,height=400,left=200,top=200');
+        'width=600,height=600,left=300,top=300');
 
     return '';
   }, []);
