@@ -4,6 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import "./App.css";
 
+let walletWindow: Window | null = null;
+let authInput: AuthInput | null = null;
+
+interface AuthInput {
+  url: string;
+  action: string;
+  payload: string;
+}
+
 function App() {
   const {
     unityProvider,
@@ -22,17 +31,19 @@ function App() {
   const loadingPercentage = Math.round(loadingProgression * 100);
 
   const handleSequenceWalletAuth = useCallback((...parameters: ReactUnityEventParameter[]): ReactUnityEventParameter => {
-    const walletUrl = parameters[0] as string;
-    window.open(walletUrl);
+    const inputJson = parameters[0] as string;
+    authInput = JSON.parse(inputJson) as AuthInput;
 
-    /*setMessageToSend({
-      functionName: "HandleResponse",
-      value: walletUrl,
-    });*/
+    const sessionId = generateId();
+    walletWindow = window.open(
+        `${authInput?.url}?dappOrigin=${window.location.origin}&sessionId=${sessionId}`,
+        "Wallet",
+        'width=600,height=400,left=200,top=200');
+
     return '';
   }, []);
 
-  const [messageToSend, setMessageToSend] = useState<{ functionName: string; value: string; } | undefined>();
+  const [messageToSend, setMessageToSend] = useState<{ functionName: string; value: string; } | undefined>(undefined);
 
   useEffect(() => {
     if (messageToSend) {
@@ -44,13 +55,85 @@ function App() {
 
   useEffect(() => {
     addEventListener("OpenWalletApp", handleSequenceWalletAuth);
+    window.addEventListener("message", handleMessage);
     window.addEventListener("resize", handleResize);
     handleResize()
     return () => {
       removeEventListener("OpenWalletApp", handleSequenceWalletAuth);
+      window.removeEventListener("message", handleMessage);
       window.removeEventListener("resize", handleResize);
     };
   }, []);
+
+  const handleMessage = async (event: MessageEvent) => {
+    if (!walletWindow) {
+      return;
+    }
+
+    switch (event.data.type) {
+      case "WALLET_OPENED":
+        postMessageToWallet({
+          id: generateId(),
+          type: 'INIT',
+          sessionId: 'mcyc0abl-8q11zpb',
+        });
+
+        console.log(authInput)
+        postMessageToWallet({
+          id: generateId(),
+          type: 'REQUEST',
+          action: authInput?.action,
+          payload: authInput?.payload
+        });
+
+        console.log('sent init message')
+        break;
+      case "RESPONSE":
+        let data = event.data;
+        if (data.payload) {
+          const parsedPayload = JSON.stringify(data.payload, (_, v) => {
+            if (typeof v === 'bigint') {
+              return {_isBigInt: true, data: v.toString()};
+            } else if (v instanceof Uint8Array) {
+              return {_isUint8Array: true, data: bytesToHex(v)};
+            } else {
+              return v;
+            }
+          });
+
+          data = {...data, payload: btoa(parsedPayload)};
+        }
+
+        console.log(data);
+
+        setMessageToSend({
+          functionName: "HandleResponse",
+          value: JSON.stringify(data)
+        });
+
+        walletWindow.close();
+        break;
+    }
+  }
+
+  function bytesToHex(bytes: Uint8Array): string {
+    return '0x' + Array.from(bytes)
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+  }
+
+  const postMessageToWallet = (message: any) => {
+    try {
+      if (!walletWindow) {
+        throw new Error("Unable to find wallet");
+      }
+
+      const walletOrigin = new URL(authInput?.url || '').origin;
+      walletWindow.postMessage(message, walletOrigin);
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   const handleResize = () => {
     const container = document.querySelector('.container') as any;
@@ -67,6 +150,12 @@ function App() {
 
     container.style.width = w + "px";
     container.style.height = h + "px";
+  }
+
+  const generateId = (): string =>  {
+    return `${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
   }
 
   return (
